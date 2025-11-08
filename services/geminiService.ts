@@ -40,8 +40,8 @@ export const generateImage = async (prompt: string): Promise<string> => {
         return data.imageUrl;
     } catch (error) {
         console.error("Error generating image via proxy:", error);
-        // Fallback placeholder
-        return "https://picsum.photos/1024/768?grayscale&blur=2";
+        // Re-throw the error so the UI component can catch it and display a proper error message.
+        throw error;
     }
 };
 

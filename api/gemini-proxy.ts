@@ -2,20 +2,23 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 import type { Chapter } from "../types";
 
-// This config is specific to Vercel for running on the edge for performance.
-export const config = {
-  runtime: 'edge',
-};
-
 // This is the main serverless function that will handle all incoming requests.
+// We are removing the 'edge' runtime config to use the more stable default Node.js runtime on Vercel,
+// which can help with compatibility issues.
 export default async function handler(req: Request) {
     // We only accept POST requests.
     if (req.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method Not Allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
     }
 
+    // Explicitly check for the API key to provide a clearer error if it's missing in the Vercel environment variables.
+    if (!process.env.API_KEY) {
+        console.error("API_KEY environment variable is not set.");
+        return new Response(JSON.stringify({ error: 'Server configuration error: API key is missing.' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+
     try {
-        // Initialize the Gemini AI client safely on the server, using the API key from environment variables.
+        // Initialize the Gemini AI client safely on the server.
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const body = await req.json();
         const { type } = body;
@@ -69,7 +72,18 @@ export default async function handler(req: Request) {
                     config: { responseMimeType: "application/json" }
                 });
 
-                return new Response(response.text, { status: 200, headers: { 'Content-Type': 'application/json' } });
+                // Clean up potential markdown code block fences from the response text.
+                let jsonText = response.text.replace(/^```json\s*/, '').replace(/```$/, '');
+
+                try {
+                    // Validate that the result is valid JSON before sending it to the client.
+                    JSON.parse(jsonText);
+                } catch (e) {
+                    console.error("Gemini API did not return valid JSON for the next chapter.", { responseText: jsonText, error: e });
+                    throw new Error("Failed to parse chapter data from AI response.");
+                }
+
+                return new Response(jsonText, { status: 200, headers: { 'Content-Type': 'application/json' } });
             }
 
             // Case for generating audio narration.

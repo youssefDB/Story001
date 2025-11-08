@@ -1,8 +1,8 @@
-
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 
 interface Props {
   children: ReactNode;
+  log: (message: string) => void;
 }
 
 interface State {
@@ -21,6 +21,7 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    this.props.log(`ERROR BOUNDARY CAUGHT: ${error.toString()}`);
     console.error("Uncaught error:", error, errorInfo);
   }
 

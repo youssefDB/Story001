@@ -34,8 +34,11 @@ async function decodeAudioData(
   return buffer;
 }
 
+interface AppProps {
+  log: (message: string) => void;
+}
 
-const App: React.FC = () => {
+const App: React.FC<AppProps> = ({ log }) => {
   const [gameState, setGameState] = useState<GameState>('cover');
   const [currentChapter, setCurrentChapter] = useState<Chapter>(INITIAL_CHAPTER);
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
@@ -47,18 +50,23 @@ const App: React.FC = () => {
   const audioSourceRef = React.useRef<AudioBufferSourceNode | null>(null);
 
   useEffect(() => {
+    log('App component has mounted. Initializing cover image fetch.');
     const fetchCoverImage = async () => {
       try {
-        const url = await generateImage(COVER_DATA.imagePrompt);
+        log('Calling generateImage for cover...');
+        const url = await generateImage(COVER_DATA.imagePrompt, log);
+        log('Cover image URL received successfully.');
         setCoverImageUrl(url);
       } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        log(`ERROR fetching cover image: ${errorMsg}`);
         console.error("Failed to load cover image:", err);
         setErrorMessage("لا يمكن تحميل صورة الغلاف. حاول تحديث الصفحة.");
         setGameState('error');
       }
     };
     fetchCoverImage();
-  }, []);
+  }, [log]);
   
   // Cleanup audio resources on component unmount
   useEffect(() => {
@@ -75,6 +83,7 @@ const App: React.FC = () => {
   const handleToggleNarration = useCallback(async (scene: string, dialogue: string) => {
     // If it's already narrating, stop it.
     if (isNarrating && audioSourceRef.current) {
+      log('Stopping current narration.');
       audioSourceRef.current.stop();
       audioSourceRef.current = null;
       setIsNarrating(false);
@@ -87,18 +96,21 @@ const App: React.FC = () => {
     }
 
     setIsNarrating(true);
+    log('Starting narration...');
 
     try {
-      // Initialize AudioContext on the first user gesture
       if (!audioContextRef.current) {
+        log('Creating new AudioContext.');
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       }
-      // Resume context if it was suspended by the browser
       if (audioContextRef.current.state === 'suspended') {
+        log('Resuming suspended AudioContext.');
         await audioContextRef.current.resume();
       }
 
-      const base64Audio = await generateSpeech(scene, dialogue);
+      log('Calling generateSpeech...');
+      const base64Audio = await generateSpeech(scene, dialogue, log);
+      log('Speech audio received.');
       const audioBytes = decode(base64Audio);
       const audioBuffer = await decodeAudioData(audioBytes, audioContextRef.current);
 
@@ -107,6 +119,7 @@ const App: React.FC = () => {
       source.connect(audioContextRef.current.destination);
       
       source.onended = () => {
+        log('Narration finished.');
         setIsNarrating(false);
         audioSourceRef.current = null;
       };
@@ -115,27 +128,36 @@ const App: React.FC = () => {
       audioSourceRef.current = source;
 
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      log(`ERROR during narration: ${errorMsg}`);
       console.error("Failed to narrate story:", err);
       setIsNarrating(false); // Reset state on error
     }
-  }, [isNarrating]);
+  }, [isNarrating, log]);
 
   const handleStartGame = useCallback(async () => {
+    log('Start game button clicked.');
     setGameState('loading');
     try {
-      const imageUrl = await generateImage(INITIAL_CHAPTER.imagePrompt);
+      log('Generating initial chapter image...');
+      const imageUrl = await generateImage(INITIAL_CHAPTER.imagePrompt, log);
+      log('Initial chapter image received.');
       setCurrentChapter({ ...INITIAL_CHAPTER, imageUrl });
       setGameState('playing');
+      log('Game state set to "playing".');
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      log(`ERROR starting game: ${errorMsg}`);
       console.error("Failed to start game:", err);
       setErrorMessage("حدث خطأ أثناء بدء القصة. يرجى المحاولة مرة أخرى.");
       setGameState('error');
     }
-  }, []);
+  }, [log]);
 
   const handleChoice = useCallback(async (choice: string) => {
-    // Stop any ongoing narration before proceeding
+    log(`Player chose: "${choice}"`);
     if (audioSourceRef.current) {
+      log('Stopping narration before advancing chapter.');
       audioSourceRef.current.stop();
       setIsNarrating(false);
     }
@@ -145,21 +167,27 @@ const App: React.FC = () => {
     setStoryHistory(newHistory);
     
     try {
-      const nextChapterData = await generateNextChapter(newHistory);
-      const imageUrl = await generateImage(nextChapterData.imagePrompt);
+      log('Generating next chapter data...');
+      const nextChapterData = await generateNextChapter(newHistory, log);
+      log('Next chapter data received. Generating image...');
+      const imageUrl = await generateImage(nextChapterData.imagePrompt, log);
+      log('Next chapter image received.');
       
       setCurrentChapter({ ...nextChapterData, imageUrl });
       setGameState('playing');
+      log('Game state set to "playing" for new chapter.');
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      log(`ERROR advancing story: ${errorMsg}`);
       console.error("Failed to advance story:", err);
       setErrorMessage("انقطع الاتصال مع عالم الظلال. يرجى المحاولة مرة أخرى.");
       setGameState('error');
     }
-  }, [currentChapter, storyHistory]);
+  }, [currentChapter, storyHistory, log]);
 
 
   const renderContent = () => {
-    if (errorMessage) {
+    if (errorMessage && gameState === 'error') {
       return (
         <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white p-4">
           <h2 className="text-2xl font-title text-red-500 mb-4">حدث خطأ</h2>
@@ -199,6 +227,7 @@ const App: React.FC = () => {
         </div>
       );
       default:
+        log(`Warning: Unknown gameState "${gameState}"`);
         return null;
     }
   };
